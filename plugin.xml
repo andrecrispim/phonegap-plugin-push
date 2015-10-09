@@ -84,10 +84,10 @@
 		<header-file src="src/ios/PushPlugin.h" />
 	</platform>
 	
-	    <!-- wp8 -->
+	<!-- wp8 -->
     <platform name="wp8">
 	    <config-file target="config.xml" parent="/*">
-	      <feature name="PushPlugin">
+	      <feature name="PushNotification">
 	        <param name="wp-package" value="PushPlugin"/>
 	      </feature>
 	    </config-file>

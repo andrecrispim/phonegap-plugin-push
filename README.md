@@ -1,4 +1,8 @@
-#phonegap-plugin-push [![Build Status](https://travis-ci.org/phonegap/phonegap-plugin-push.svg)](https://travis-ci.org/phonegap/phonegap-plugin-push)
+#This is a fork from https://github.com/phonegap/phonegap-plugin-push This version support Windows Phone 8.
+
+=========================
+
+#phonegap-plugin-push
 
 > Register and receive push notifications
 
