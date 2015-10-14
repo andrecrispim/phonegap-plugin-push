@@ -145,7 +145,11 @@ namespace WPCordovaClassLib.Cordova.Commands
             
             foreach (var item in e.Collection)
             {            	
-                content.Add(item.Key, item.Value);
+            	if (item.Key == "wp:Data") {
+            		content.Add(item.Key, JsonConvert.DeserializeObject<dynamic>(item.Value));
+            	} else {
+            		content.Add(item.Key, item.Value);
+            	}
             }
 
             SendEvent(JsonConvert.SerializeObject(toast));
