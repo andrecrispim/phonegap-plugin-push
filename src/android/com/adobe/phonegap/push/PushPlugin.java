@@ -6,7 +6,7 @@ import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.util.Log;
 
-import com.google.android.gms.iid.InstanceID;
+import com.google.android.gcm.GCMRegistrar;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
@@ -17,9 +17,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
 
 public class PushPlugin extends CordovaPlugin implements PushConstants {
@@ -51,49 +48,24 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
                     JSONObject jo = null;
 
                     Log.v(LOG_TAG, "execute: data=" + data.toString());
-                    SharedPreferences sharedPref = getApplicationContext().getSharedPreferences(COM_ADOBE_PHONEGAP_PUSH, Context.MODE_PRIVATE);
-                    String token = null;
-                    String senderID = null;
 
                     try {
                         jo = data.getJSONObject(0).getJSONObject(ANDROID);
 
                         Log.v(LOG_TAG, "execute: jo=" + jo.toString());
 
-                        senderID = jo.getString(SENDER_ID);
+                        String senderID = jo.getString(SENDER_ID);
 
                         Log.v(LOG_TAG, "execute: senderID=" + senderID);
 
-                        String savedSenderID = sharedPref.getString(SENDER_ID, "");
-                        String savedRegID = sharedPref.getString(REGISTRATION_ID, "");
-
-                        // first time run get new token
-                        if ("".equals(savedSenderID) && "".equals(savedRegID)) {
-                            token = InstanceID.getInstance(getApplicationContext()).getToken(senderID, GCM);
-                        }
-                        // new sender ID, re-register
-                        else if (!savedSenderID.equals(senderID)) {
-                            token = InstanceID.getInstance(getApplicationContext()).getToken(senderID, GCM);
-                        }
-                        // use the saved one
-                        else {
-                            token = sharedPref.getString(REGISTRATION_ID, "");
-                        }
-
-                        JSONObject json = new JSONObject().put(REGISTRATION_ID, token);
-
-                        Log.v(LOG_TAG, "onRegistered: " + json.toString());
-
-                        PushPlugin.sendEvent( json );
+                        GCMRegistrar.register(getApplicationContext(), senderID);
                     } catch (JSONException e) {
-                        Log.e(LOG_TAG, "execute: Got JSON Exception " + e.getMessage());
-                        callbackContext.error(e.getMessage());
-                    } catch (IOException e) {
                         Log.e(LOG_TAG, "execute: Got JSON Exception " + e.getMessage());
                         callbackContext.error(e.getMessage());
                     }
 
                     if (jo != null) {
+                        SharedPreferences sharedPref = getApplicationContext().getSharedPreferences(COM_ADOBE_PHONEGAP_PUSH, Context.MODE_PRIVATE);
                         SharedPreferences.Editor editor = sharedPref.edit();
                         try {
                             editor.putString(ICON, jo.getString(ICON));
@@ -109,8 +81,6 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
                         editor.putBoolean(VIBRATE, jo.optBoolean(VIBRATE, true));
                         editor.putBoolean(CLEAR_NOTIFICATIONS, jo.optBoolean(CLEAR_NOTIFICATIONS, true));
                         editor.putBoolean(FORCE_SHOW, jo.optBoolean(FORCE_SHOW, false));
-                        editor.putString(SENDER_ID, senderID);
-                        editor.putString(REGISTRATION_ID, token);
                         editor.commit();
                     }
 
@@ -124,18 +94,12 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
         } else if (UNREGISTER.equals(action)) {
             cordova.getThreadPool().execute(new Runnable() {
                 public void run() {
-                    try {
-                        InstanceID.getInstance(getApplicationContext()).deleteInstanceID();
-                        Log.v(LOG_TAG, "UNREGISTER");
-                        callbackContext.success();
-                    } catch (IOException e) {
-                        Log.e(LOG_TAG, "execute: Got JSON Exception " + e.getMessage());
-                        callbackContext.error(e.getMessage());
+                    GCMRegistrar.unregister(getApplicationContext());
+
+                    Log.v(LOG_TAG, "UNREGISTER");
+                    callbackContext.success();
                 }
-            }
             });
-        } else if (FINISH.equals(action)) {
-            callbackContext.success();
         } else {
             Log.e(LOG_TAG, "Invalid action : " + action);
             callbackContext.sendPluginResult(new PluginResult(PluginResult.Status.INVALID_ACTION));
@@ -211,30 +175,40 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
      * serializes a bundle to JSON.
      */
     private static JSONObject convertBundleToJson(Bundle extras) {
-        Log.d(LOG_TAG, "convert extras to json");
         try {
             JSONObject json = new JSONObject();
             JSONObject additionalData = new JSONObject();
-
-            // Add any keys that need to be in top level json to this set
-            HashSet<String> jsonKeySet = new HashSet();
-            Collections.addAll(jsonKeySet, TITLE,MESSAGE,COUNT,SOUND,IMAGE);
-
             Iterator<String> it = extras.keySet().iterator();
             while (it.hasNext()) {
                 String key = it.next();
                 Object value = extras.get(key);
                  
                 Log.d(LOG_TAG, "key = " + key);
-
-                if (jsonKeySet.contains(key)) {
-                    json.put(key, value);
+                if (key.startsWith(GCM_NOTIFICATION)) {
+                    key = key.substring(GCM_NOTIFICATION.length()+1, key.length());
                 }
-                else if (key.equals(COLDSTART)) {
-                    additionalData.put(key, extras.getBoolean(COLDSTART));
+
+                // System data from Android
+                if (key.equals(FROM) || key.equals(COLLAPSE_KEY)) {
+                    additionalData.put(key, value);
                 }
                 else if (key.equals(FOREGROUND)) {
                     additionalData.put(key, extras.getBoolean(FOREGROUND));
+                }
+                else if (key.equals(COLDSTART)){
+                    additionalData.put(key, extras.getBoolean(COLDSTART));
+                } else if (key.equals(MESSAGE) || key.equals(BODY)) {
+                    json.put(MESSAGE, value);
+                } else if (key.equals(TITLE)) {
+                    json.put(TITLE, value);
+                } else if (key.equals(MSGCNT) || key.equals(BADGE)) {
+                    json.put(COUNT, value);
+                } else if (key.equals(SOUNDNAME) || key.equals(SOUND)) {
+                    json.put(SOUND, value);
+                } else if (key.equals(IMAGE)) {
+                    json.put(IMAGE, value);
+                } else if (key.equals(CALLBACK)) {
+                    json.put(CALLBACK, value);
                 }
                 else if ( value instanceof String ) {
                     String strValue = (String)value;
@@ -255,7 +229,7 @@ public class PushPlugin extends CordovaPlugin implements PushConstants {
                     }
                 }
             } // while
-
+            
             json.put(ADDITIONAL_DATA, additionalData);
             Log.v(LOG_TAG, "extrasToJSON: " + json.toString());
 

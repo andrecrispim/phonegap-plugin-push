@@ -19,7 +19,7 @@ import android.support.v4.app.NotificationCompat;
 import android.text.Html;
 import android.util.Log;
 
-import com.google.android.gms.gcm.GcmListenerService;
+import com.google.android.gcm.GCMBaseIntentService;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -31,11 +31,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Random;
 
 @SuppressLint("NewApi")
-public class GCMIntentService extends GcmListenerService implements PushConstants {
+public class GCMIntentService extends GCMBaseIntentService implements PushConstants {
 
     private static final String LOG_TAG = "PushPlugin_GCMIntentService";
     private static HashMap<Integer, ArrayList<String>> messageMap = new HashMap<Integer, ArrayList<String>>();
@@ -54,16 +53,43 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
         }
     }
 
-    @Override
-    public void onMessageReceived(String from, Bundle extras) {
-        Log.d(LOG_TAG, "onMessage - from: " + from);
+    public GCMIntentService() {
+        super("GCMIntentService");
+    }
 
+    @Override
+    public void onRegistered(Context context, String regId) {
+
+        Log.v(LOG_TAG, "onRegistered: " + regId);
+
+        try {
+            JSONObject json = new JSONObject().put(REGISTRATION_ID, regId);
+
+            Log.v(LOG_TAG, "onRegistered: " + json.toString());
+
+            PushPlugin.sendEvent( json );
+        }
+        catch(JSONException e) {
+            // No message to the user is sent, JSON failed
+            Log.e(LOG_TAG, "onRegistered: JSON exception");
+        }
+    }
+
+    @Override
+    public void onUnregistered(Context context, String regId) {
+        Log.d(LOG_TAG, "onUnregistered - regId: " + regId);
+    }
+
+    @Override
+    protected void onMessage(Context context, Intent intent) {
+        Log.d(LOG_TAG, "onMessage - context: " + context);
+
+        // Extract the payload from the message
+        Bundle extras = intent.getExtras();
         if (extras != null) {
 
-            SharedPreferences prefs = getApplicationContext().getSharedPreferences(PushPlugin.COM_ADOBE_PHONEGAP_PUSH, Context.MODE_PRIVATE);
+            SharedPreferences prefs = context.getSharedPreferences(PushPlugin.COM_ADOBE_PHONEGAP_PUSH, Context.MODE_PRIVATE);
             boolean forceShow = prefs.getBoolean(FORCE_SHOW, false);
-
-            normalizeExtras(extras);
 
             // if we are in the foreground and forceShow is `false` only send data
             if (!forceShow && PushPlugin.isInForeground()) {
@@ -74,113 +100,22 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
             else if (forceShow && PushPlugin.isInForeground()) {
                 extras.putBoolean(FOREGROUND, true);
                 
-                showNotificationIfPossible(getApplicationContext(), extras);
+                showNotificationIfPossible(context, extras);
             }
             // if we are not in the foreground always send notification if the data has at least a message or title
             else {
                 extras.putBoolean(FOREGROUND, false);
 
-                showNotificationIfPossible(getApplicationContext(), extras);
+                showNotificationIfPossible(context, extras);
             }
         }
     }
-
-    /*
-     * Change a values key in the extras bundle
-     */
-    private void replaceKey(String oldKey, String newKey, Bundle extras) {
-        Object value = extras.get(oldKey);
-        if ( value != null ) {
-            extras.remove(oldKey);
-            if (value instanceof String) {
-                extras.putString(newKey, (String) value);
-            } else if (value instanceof Boolean) {
-                extras.putBoolean(newKey, (Boolean) value);
-            } else if (value instanceof Number) {
-                extras.putDouble(newKey, ((Number) value).doubleValue());
-            } else {
-                extras.putString(newKey, String.valueOf(value));
-            }
-        }
-    }
-
-    /*
-     * Replace alternate keys with our canonical value
-     */
-    private String normalizeKey(String key) {
-        if (key.equals(BODY) || key.equals(ALERT)) {
-            return MESSAGE;
-        } else if (key.equals(MSGCNT) || key.equals(BADGE)) {
-            return COUNT;
-        } else if (key.equals(SOUNDNAME)) {
-            return SOUND;
-        } else if (key.startsWith(GCM_NOTIFICATION)) {
-            return key.substring(GCM_NOTIFICATION.length()+1, key.length());
-        } else if (key.startsWith(GCM_N)) {
-            return key.substring(GCM_N.length()+1, key.length());
-        } else if (key.startsWith(UA_PREFIX)) {
-            key = key.substring(UA_PREFIX.length()+1, key.length());
-            return key.toLowerCase();
-        } else {
-            return key;
-        }
-    }
-
-    /*
-     * Parse bundle into normalized keys.
-     */
-    private void normalizeExtras(Bundle extras) {
-        Log.d(LOG_TAG, "mormalize extras");
-        Iterator<String> it = extras.keySet().iterator();
-        while (it.hasNext()) {
-            String key = it.next();
-
-            Log.d(LOG_TAG, "key = " + key);
-
-            // If the key is "data" or "message" and the value is a json object extract
-            // This is to support parse.com and other services. Issue #147 and pull #218
-            if (key.equals(PARSE_COM_DATA) || key.equals(MESSAGE)) {
-                Object json = extras.get(key);
-                // Make sure data is json object stringified
-                if ( json instanceof String && ((String) json).startsWith("{") ) {
-                    Log.d(LOG_TAG, "extracting nested message data from key = " + key);
-                    try {
-                        // If object contains message keys promote each value to the root of the bundle
-                        JSONObject data = new JSONObject((String) json);
-                        if ( data.has(ALERT) || data.has(MESSAGE) || data.has(BODY) || data.has(TITLE) ) {
-                            Iterator<String> jsonIter = data.keys();
-                            while (jsonIter.hasNext()) {
-                                String jsonKey = jsonIter.next();
-
-                                Log.d(LOG_TAG, "key = data/" + jsonKey);
-
-                                String value = data.getString(jsonKey);
-                                jsonKey = normalizeKey(jsonKey);
-                                extras.putString(jsonKey, value);
-                            }
-
-                            extras.remove(key);
-                        }
-                    } catch( JSONException e) {
-                        Log.e(LOG_TAG, "normalizeExtras: JSON exception");
-                    }
-                }
-            }
-
-            String newKey = normalizeKey(key);
-            if ( !key.equals(newKey) ) {
-                Log.d(LOG_TAG, "replace key " + key + " with " + newKey);
-                replaceKey(key, newKey, extras);
-            }
-        } // while
-
-    }
-
+    
     private void showNotificationIfPossible (Context context, Bundle extras) {
 
         // Send a notification if there is a message or title, otherwise just send data
-        String message = extras.getString(MESSAGE);
-        String title = extras.getString(TITLE);
+        String message = this.getMessageText(extras);
+        String title = getString(extras, TITLE, "");
         if ((message != null && message.length() != 0) ||
                 (title != null && title.length() != 0)) {
             createNotification(context, extras);
@@ -207,8 +142,8 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
         NotificationCompat.Builder mBuilder =
                 new NotificationCompat.Builder(context)
                         .setWhen(System.currentTimeMillis())
-                        .setContentTitle(extras.getString(TITLE))
-                        .setTicker(extras.getString(TITLE))
+                        .setContentTitle(getString(extras, TITLE))
+                        .setTicker(getString(extras, TITLE))
                         .setContentIntent(contentIntent)
                         .setAutoCancel(true);
 
@@ -235,7 +170,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
          * To use, add the `iconColor` key to plugin android options
          *
          */
-        setNotificationIconColor(extras.getString("color"), mBuilder, localIconColor);
+        setNotificationIconColor(getString(extras,"color"), mBuilder, localIconColor);
 
         /*
          * Notification Icon
@@ -302,7 +237,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
 
     private void createActions(Bundle extras, NotificationCompat.Builder mBuilder, Resources resources, String packageName) {
         Log.d(LOG_TAG, "create actions");
-        String actions = extras.getString(ACTIONS);
+        String actions = getString(extras, ACTIONS);
         if (actions != null) {
             try {
                 JSONArray actionsArray = new JSONArray(actions);
@@ -325,9 +260,9 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationCount(Bundle extras, NotificationCompat.Builder mBuilder) {
-        String msgcnt = extras.getString(MSGCNT);
+        String msgcnt = getString(extras, MSGCNT);
         if (msgcnt == null) {
-            msgcnt = extras.getString(BADGE);
+            msgcnt = getString(extras, BADGE);
         }
         if (msgcnt != null) {
             mBuilder.setNumber(Integer.parseInt(msgcnt));
@@ -335,7 +270,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationVibration(Bundle extras, Boolean vibrateOption, NotificationCompat.Builder mBuilder) {
-        String vibrationPattern = extras.getString(VIBRATION_PATTERN);
+        String vibrationPattern = getString(extras, VIBRATION_PATTERN);
         if (vibrationPattern != null) {
             String[] items = vibrationPattern.replaceAll("\\[", "").replaceAll("\\]", "").split(",");
             long[] results = new long[items.length];
@@ -353,9 +288,9 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationMessage(int notId, Bundle extras, NotificationCompat.Builder mBuilder) {
-        String message = extras.getString(MESSAGE);
+        String message = getMessageText(extras);
 
-        String style = extras.getString(STYLE, STYLE_TEXT);
+        String style = getString(extras, STYLE, STYLE_TEXT);
         if(STYLE_INBOX.equals(style)) {
             setNotification(notId, message);
 
@@ -366,12 +301,12 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
             if (sizeList > 1) {
                 String sizeListMessage = sizeList.toString();
                 String stacking = sizeList + " more";
-                if (extras.getString(SUMMARY_TEXT) != null) {
-                    stacking = extras.getString(SUMMARY_TEXT);
+                if (getString(extras, SUMMARY_TEXT) != null) {
+                    stacking = getString(extras, SUMMARY_TEXT);
                     stacking = stacking.replace("%n%", sizeListMessage);
                 }
                 NotificationCompat.InboxStyle notificationInbox = new NotificationCompat.InboxStyle()
-                        .setBigContentTitle(extras.getString(TITLE))
+                        .setBigContentTitle(getString(extras, TITLE))
                         .setSummaryText(stacking);
 
                 for (int i = messageList.size() - 1; i >= 0; i--) {
@@ -383,7 +318,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
                 NotificationCompat.BigTextStyle bigText = new NotificationCompat.BigTextStyle();
                 if (message != null) {
                     bigText.bigText(message);
-                    bigText.setBigContentTitle(extras.getString(TITLE));
+                    bigText.setBigContentTitle(getString(extras, TITLE));
                     mBuilder.setStyle(bigText);
                 }
             }
@@ -391,11 +326,11 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
             setNotification(notId, "");
 
             NotificationCompat.BigPictureStyle bigPicture = new NotificationCompat.BigPictureStyle();
-            bigPicture.bigPicture(getBitmapFromURL(extras.getString(PICTURE)));
-            bigPicture.setBigContentTitle(extras.getString(TITLE));
-            bigPicture.setSummaryText(extras.getString(SUMMARY_TEXT));
+            bigPicture.bigPicture(getBitmapFromURL(getString(extras, PICTURE)));
+            bigPicture.setBigContentTitle(getString(extras, TITLE));
+            bigPicture.setSummaryText(getString(extras, SUMMARY_TEXT));
 
-            mBuilder.setContentTitle(extras.getString(TITLE));
+            mBuilder.setContentTitle(getString(extras, TITLE));
             mBuilder.setContentText(message);
 
             mBuilder.setStyle(bigPicture);
@@ -408,9 +343,9 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
                 mBuilder.setContentText(Html.fromHtml(message));
 
                 bigText.bigText(message);
-                bigText.setBigContentTitle(extras.getString(TITLE));
+                bigText.setBigContentTitle(getString(extras, TITLE));
 
-                String summaryText = extras.getString(SUMMARY_TEXT);
+                String summaryText = getString(extras, SUMMARY_TEXT);
                 if (summaryText != null) {
                     bigText.setSummaryText(summaryText);
                 }
@@ -425,10 +360,34 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
         }
     }
 
+    private String getString(Bundle extras,String key) {
+        String message = extras.getString(key);
+        if (message == null) {
+            message = extras.getString(GCM_NOTIFICATION+"."+key);
+        }
+        return message;
+    }
+
+    private String getString(Bundle extras,String key, String defaultString) {
+        String message = extras.getString(key);
+        if (message == null) {
+            message = extras.getString(GCM_NOTIFICATION+"."+key, defaultString);
+        }
+        return message;
+    }
+
+    private String getMessageText(Bundle extras) {
+        String message = getString(extras, MESSAGE);
+        if (message == null) {
+            message = getString(extras, BODY);
+        }
+        return message;
+    }
+
     private void setNotificationSound(Context context, Bundle extras, NotificationCompat.Builder mBuilder) {
-        String soundname = extras.getString(SOUNDNAME);
+        String soundname = getString(extras, SOUNDNAME);
         if (soundname == null) {
-            soundname = extras.getString(SOUND);
+            soundname = getString(extras, SOUND);
         }
         if (soundname != null) {
             Uri sound = Uri.parse(ContentResolver.SCHEME_ANDROID_RESOURCE
@@ -441,7 +400,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationLedColor(Bundle extras, NotificationCompat.Builder mBuilder) {
-        String ledColor = extras.getString(LED_COLOR);
+        String ledColor = getString(extras, LED_COLOR);
         if (ledColor != null) {
             // Converts parse Int Array from ledColor
             String[] items = ledColor.replaceAll("\\[", "").replaceAll("\\]", "").split(",");
@@ -460,7 +419,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationPriority(Bundle extras, NotificationCompat.Builder mBuilder) {
-        String priorityStr = extras.getString(PRIORITY);
+        String priorityStr = getString(extras, PRIORITY);
         if (priorityStr != null) {
             try {
                 Integer priority = Integer.parseInt(priorityStr);
@@ -476,7 +435,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
     }
 
     private void setNotificationLargeIcon(Bundle extras, String packageName, Resources resources, NotificationCompat.Builder mBuilder) {
-        String gcmLargeIcon = extras.getString(IMAGE); // from gcm
+        String gcmLargeIcon = getString(extras, IMAGE); // from gcm
         if (gcmLargeIcon != null) {
             if (gcmLargeIcon.startsWith("http://") || gcmLargeIcon.startsWith("https://")) {
                 mBuilder.setLargeIcon(getBitmapFromURL(gcmLargeIcon));
@@ -506,7 +465,7 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
 
     private void setNotificationSmallIcon(Context context, Bundle extras, String packageName, Resources resources, NotificationCompat.Builder mBuilder, String localIcon) {
         int iconId = 0;
-        String icon = extras.getString(ICON);
+        String icon = getString(extras, ICON);
         if (icon != null) {
             iconId = resources.getIdentifier(icon, DRAWABLE, packageName);
             Log.d(LOG_TAG, "using icon from plugin options");
@@ -562,11 +521,20 @@ public class GCMIntentService extends GcmListenerService implements PushConstant
         return (String)appName;
     }
 
+    @Override
+    public void onError(Context context, String errorId) {
+        Log.e(LOG_TAG, "onError - errorId: " + errorId);
+        // if we are in the foreground, just send the error
+        if (PushPlugin.isInForeground()) {
+            PushPlugin.sendError(errorId);
+        }
+    }
+
     private int parseInt(String value, Bundle extras) {
         int retval = 0;
 
         try {
-            retval = Integer.parseInt(extras.getString(value));
+            retval = Integer.parseInt(getString(extras, value));
         }
         catch(NumberFormatException e) {
             Log.e(LOG_TAG, "Number format exception - Error parsing " + value + ": " + e.getMessage());
