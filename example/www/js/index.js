@@ -35,7 +35,7 @@ var app = {
     onDeviceReady: function() {
         var push = PushNotification.init({
             "android": {
-                "senderID": "1234567890"
+                "senderID": "741175631277"
             },
             "ios": {"alert": "true", "badge": "true", "sound": "true"}, 
             "windows": {} 
@@ -51,7 +51,7 @@ var app = {
         	console.log("notification event");
             console.log(JSON.stringify(data));
             var cards = document.getElementById("cards");
-            var card = '<div class="row">' +
+            var push = '<div class="row">' +
 		  		  '<div class="col s12 m6">' +
 				  '  <div class="card darken-1">' +
 				  '    <div class="card-content black-text">' +
@@ -61,11 +61,7 @@ var app = {
 				  '  </div>' +
 				  ' </div>' +
 				  '</div>';
-            cards.innerHTML += card;
-            
-            push.finish(function () {
-                console.log('finish successfully called');
-            });
+            cards.innerHTML += push;
         });
 
         push.on('error', function(e) {
