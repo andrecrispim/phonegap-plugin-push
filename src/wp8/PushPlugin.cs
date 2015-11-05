@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Windows;
+using System.Threading;
 using Microsoft.Phone.Controls;
 using Microsoft.Phone.Notification;
 using Microsoft.Phone.Shell;
@@ -51,8 +52,9 @@ namespace WPCordovaClassLib.Cordova.Commands
                  pushChannel.BindToShellTile();
              }
              
-             if (pushChannel.ChannelUri == null && retry) 
+             if ((pushChannel.ChannelUri == null || pushChannel.ChannelUri.ToString() == String.Empty) && retry) 
              {   
+            	 Thread.Sleep(500);
             	 register(options, false);
              } 
              else 
