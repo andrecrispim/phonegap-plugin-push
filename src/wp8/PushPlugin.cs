@@ -50,15 +50,15 @@ namespace WPCordovaClassLib.Cordova.Commands
                  pushChannel.BindToShellToast();
                  pushChannel.BindToShellTile();
              }
-
-             SubscribePushChannelEvents(pushChannel);
-
+             
              if (pushChannel.ChannelUri == null && retry) 
              {   
             	 register(options, false);
              } 
              else 
              {
+            	 SubscribePushChannelEvents(pushChannel);
+            	 
                  RegisterResult result = new RegisterResult
                  {
                      ChannelName = this.pushOptions.WP8.ChannelName,
